@@ -1,0 +1,7 @@
+build/
+*.so
+__pycache__/
+*.ipynb
+.vscode/
+.cache/
+data/
