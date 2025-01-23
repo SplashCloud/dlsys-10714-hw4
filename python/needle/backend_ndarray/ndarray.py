@@ -247,7 +247,12 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if not self.is_compact():
+          raise ValueError("The current matrix is not compact")
+        if prod(new_shape) != prod(self._shape):
+          raise ValueError("The new size != current size")
+        new_strides = self.compact_strides(new_shape)
+        return self.make(shape=new_shape, strides=new_strides, device=self._device, handle=self._handle, offset=self._offset)
         ### END YOUR SOLUTION
 
     def permute(self, new_axes):
@@ -272,7 +277,9 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = tuple(np.array(self._shape)[np.array(new_axes)])
+        new_strides = tuple(np.array(self._strides)[np.array(new_axes)]) # strides也要跟着改变顺序，因为获取元素的时候实际是strides在决定
+        return self.make(shape=new_shape, strides=new_strides, device=self._device, handle=self._handle, offset=self._offset)
         ### END YOUR SOLUTION
 
     def broadcast_to(self, new_shape):
@@ -296,7 +303,16 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_strides = []
+        for old, new, stride in zip(reversed(self._shape), reversed(new_shape), reversed(self._strides)):
+          if old != 1 and old != new:
+            raise ValueError(f"old({old}) != new({new})")
+          elif old == new:
+            new_strides.append(stride)
+          else:
+            new_strides.append(0)
+        new_strides.extend([0 for _ in range(len(new_shape) - len(self._shape))])
+        return self.make(shape=new_shape, strides=tuple(reversed(new_strides)), device=self._device, handle=self._handle, offset=self._offset)
         ### END YOUR SOLUTION
 
     ### Get and set elements
@@ -363,7 +379,15 @@ class NDArray:
         assert len(idxs) == self.ndim, "Need indexes equal to number of dimensions"
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = []
+        new_strides = [] # strides also need to change when (step != 1)
+        new_offset = 0
+        for i, s in enumerate(idxs):
+          start, stop, step = s.start, s.stop, s.step
+          new_shape.append((stop - start - 1) // step + 1)
+          new_strides.append(self._strides[i] * step)
+          new_offset += self._strides[i] * start
+        return self.make(shape=tuple(new_shape), strides=tuple(new_strides), device=self._device, handle=self._handle, offset=self._offset+new_offset)
         ### END YOUR SOLUTION
 
     def __setitem__(self, idxs, other):
