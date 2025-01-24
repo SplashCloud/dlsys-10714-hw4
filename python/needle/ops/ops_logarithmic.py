@@ -24,12 +24,27 @@ def logsoftmax(a):
 
 
 class LogSumExp(TensorOp):
-    def __init__(self, axes: Optional[tuple] = None):
-        self.axes = axes
+    def __init__(self, axes: Optional[Tuple[int, ...] | int] = None):
+        if isinstance(axes, int):
+            self.axes = (axes, )
+        else:
+            self.axes = axes
 
-    def compute(self, Z):
+    def compute(self, Z: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        '''
+        log(
+            sum(
+                exp(
+                    Z - max(Z, axes, keep_dim=True)
+                )
+            )
+        ) + max(Z, axes, keep_dim=False)
+        '''
+        max_Z_origin = maximum(Tensor(Z, device=Z.device), axes=self.axes, keepdims=True).data.cached_data
+        max_Z_reduce = maximum(Tensor(Z, device=Z.device), axes=self.axes).data.cached_data
+        sum = summation(Tensor((Z - max_Z_origin.broadcast_to(Z.shape)).exp(), device=Z.device), axes=self.axes).data.cached_data
+        return sum.log() + max_Z_reduce
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -38,6 +53,6 @@ class LogSumExp(TensorOp):
         ### END YOUR SOLUTION
 
 
-def logsumexp(a, axes=None):
+def logsumexp(a: Tensor, axes: Optional[Tuple[int, ...] | int]=None) -> Tensor:
     return LogSumExp(axes=axes)(a)
 

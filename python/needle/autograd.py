@@ -163,6 +163,8 @@ class TensorTuple(Value):
     """Represent a tuple of tensors.
 
     To keep things simple, we do not support nested tuples.
+
+    self.cached_data: Tuple(NDArray, ...)
     """
 
     def __len__(self):
@@ -379,7 +381,7 @@ def compute_gradient_of_variables(output_tensor, out_grad):
 
     # Traverse graph in reverse topological order given the output_node that we are taking gradient wrt.
     reverse_topo_order = list(reversed(find_topo_sort([output_tensor])))
-
+    # print_node_list(reverse_topo_order)
     ### BEGIN YOUR SOLUTION
     for node in reverse_topo_order:
       node.grad = sum_node_list(node_to_output_grads_list[node])
@@ -420,11 +422,8 @@ def topo_sort_dfs(node, visited, topo_order):
       visited.add(id(node))
       topo_order.append(node)
       return
-    lhs = node.inputs[0]
-    topo_sort_dfs(lhs, visited, topo_order)
-    if len(node.inputs) > 1:
-      rhs = node.inputs[1]
-      topo_sort_dfs(rhs, visited, topo_order)
+    for ipt in node.inputs:
+        topo_sort_dfs(ipt, visited, topo_order)
     visited.add(id(node))
     topo_order.append(node)
     ### END YOUR SOLUTION
@@ -441,3 +440,10 @@ def sum_node_list(node_list):
     from functools import reduce
 
     return reduce(add, node_list)
+
+def print_node_list(node_list: List[Value]):
+    for node in node_list:
+        print(10*'=')
+        print(f'node.cached_data: {node.cached_data}')
+        print(f'node.op: {node.op}')
+        print(f'node.inputs: {node.inputs}')
