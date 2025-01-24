@@ -613,7 +613,15 @@ class NDArray:
         axes = ( (0, 0), (1, 1), (0, 0)) pads the middle axis with a 0 on the left and right side.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = []
+        origin_region_indices = []
+        for pad, axis in zip(axes, self.shape):
+            new_shape.append(axis + pad[0] + pad[1])
+            origin_region_indices.append(slice(pad[0], pad[0]+axis, 1))
+        result = NDArray.make(shape=tuple(new_shape), device=self.device)
+        result[tuple(slice(0, axis, 1) for axis in self.shape)] = 0
+        result[tuple(origin_region_indices)] = self
+        return result
         ### END YOUR SOLUTION
 
 def array(a, dtype="float32", device=None):
