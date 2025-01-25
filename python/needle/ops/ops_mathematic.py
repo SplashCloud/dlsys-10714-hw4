@@ -564,15 +564,13 @@ class Conv(TensorOp):
 
     def compute(self, Z: NDArray, W: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
-        print(f'before-padding: {Z.shape}')
         if self.padding != 0:
             Z = Z.pad(((0,0), (self.padding, self.padding), (self.padding, self.padding), (0,0)))
-        print(f'after-padding: {Z.shape}')
         n, h, w, ic = Z.shape
         k, _, ic, oc = W.shape
         ns, hs, ws, cs = Z.strides
-        nh, nw = h-k+1, w-k+1
-        im2col = Z.as_strided(shape=(n, nh, nw, k, k, ic), strides=(ns, hs, ws, hs, ws, cs))
+        nh, nw = (h-k)//self.stride+1, (w-k)//self.stride+1
+        im2col = Z.as_strided(shape=(n, nh, nw, k, k, ic), strides=(ns, self.stride*hs, self.stride*ws, hs, ws, cs))
         inner_dim = k * k * ic
         output = im2col.compact().reshape((n*nh*nw, inner_dim)) @ W.compact().reshape((inner_dim, oc))
         return output.compact().reshape((n, nh, nw, oc))
