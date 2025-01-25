@@ -621,11 +621,11 @@ class NDArray:
         ### BEGIN YOUR SOLUTION
         new_shape = []
         origin_region_indices = []
-        for pad, axis in zip(axes, self.shape):
-            new_shape.append(axis + pad[0] + pad[1])
-            origin_region_indices.append(slice(pad[0], pad[0]+axis, 1))
+        for pad, dim in zip(axes, self.shape):
+            new_shape.append(dim + pad[0] + pad[1])
+            origin_region_indices.append(slice(pad[0], pad[0]+dim, 1))
         result = NDArray.make(shape=tuple(new_shape), device=self.device)
-        result[tuple(slice(0, axis, 1) for axis in self.shape)] = 0
+        result[tuple(slice(0, dim, 1) for dim in new_shape)] = 0
         result[tuple(origin_region_indices)] = self
         return result
         ### END YOUR SOLUTION
