@@ -603,7 +603,13 @@ class NDArray:
         Note: compact() before returning.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_strides = list(self.strides)
+        new_offset = 0
+        for axis in axes:
+            new_strides[axis] *= -1
+            new_offset += (self.shape[axis] - 1) * self.strides[axis]
+        result = NDArray.make(shape=self._shape, strides=new_strides, device=self._device, handle=self._handle,  offset=new_offset)
+        return result.compact()
         ### END YOUR SOLUTION
 
     def pad(self, axes):

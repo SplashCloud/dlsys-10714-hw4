@@ -484,21 +484,21 @@ def split(a: Tensor, axis: int) -> TensorTuple:
 
 
 class Flip(TensorOp):
-    def __init__(self, axes: Optional[tuple] = None):
+    def __init__(self, axes: Tuple[int, ...]):
         self.axes = axes
 
-    def compute(self, a):
+    def compute(self, a: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return a.flip(self.axes)
         ### END YOUR SOLUTION
 
-    def gradient(self, out_grad, node):
+    def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return flip(out_grad, self.axes)
         ### END YOUR SOLUTION
 
 
-def flip(a, axes):
+def flip(a: Tensor, axes: Tuple[int, ...]) -> Tensor:
     return Flip(axes)(a)
 
 
