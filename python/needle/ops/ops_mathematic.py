@@ -475,7 +475,7 @@ class Split(TensorTupleOp):
     def gradient(self, out_grad: TensorTuple, node: Tensor):
         ### BEGIN YOUR SOLUTION
         assert isinstance(out_grad, TensorTuple)
-        return split(out_grad, self.axis)
+        return stack(out_grad, self.axis)
         ### END YOUR SOLUTION
 
 
@@ -503,42 +503,57 @@ def flip(a: Tensor, axes: Tuple[int, ...]) -> Tensor:
 
 
 class Dilate(TensorOp):
-    def __init__(self, axes: tuple, dilation: int):
+    def __init__(self, axes: Tuple[int, ...], dilation: int):
         self.axes = axes
         self.dilation = dilation
 
-    def compute(self, a):
+    def compute(self, a: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape= list(a.shape)
+        origin_region_indices = [slice(0, dim, 1) for dim in a.shape]
+        for axis in self.axes:
+            new_shape[axis] *= (self.dilation + 1)
+            origin_region_indices[axis] = slice(0, new_shape[axis], self.dilation + 1)
+        result = NDArray.make(shape=tuple(new_shape), device=a.device)
+        result[tuple(slice(0, dim, 1) for dim in new_shape)] = 0
+        result[tuple(origin_region_indices)] = a
+        return result
         ### END YOUR SOLUTION
 
-    def gradient(self, out_grad, node):
+    def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return undilate(out_grad, axes=self.axes, dilation=self.dilation)
         ### END YOUR SOLUTION
 
 
-def dilate(a, axes, dilation):
+def dilate(a: Tensor, axes: Tuple[int, ...], dilation: int) -> Tensor:
     return Dilate(axes, dilation)(a)
 
 
 class UnDilate(TensorOp):
-    def __init__(self, axes: tuple, dilation: int):
+    def __init__(self, axes: Tuple[int, ...], dilation: int):
         self.axes = axes
         self.dilation = dilation
 
-    def compute(self, a):
+    def compute(self, a: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_shape = list(a.shape)
+        remain_region_indices = [slice(0, dim, 1) for dim in a.shape]
+        for axis in self.axes:
+            new_shape[axis] //= (self.dilation + 1)
+            remain_region_indices[axis] = slice(0, a.shape[axis], self.dilation + 1)
+        result = NDArray.make(shape=tuple(new_shape), device=a.device)
+        result[tuple(slice(0, dim, 1) for dim in new_shape)] = a[tuple(remain_region_indices)]
+        return result
         ### END YOUR SOLUTION
 
-    def gradient(self, out_grad, node):
+    def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return dilate(out_grad, axes=self.axes, dilation=self.dilation)
         ### END YOUR SOLUTION
 
 
-def undilate(a, axes, dilation):
+def undilate(a: Tensor, axes: Tuple[int, ...], dilation: int) -> Tensor:
     return UnDilate(axes, dilation)(a)
 
 
