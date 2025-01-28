@@ -180,6 +180,18 @@ def transpose(a: Tensor, axes: Optional[Tuple[int, ...]]=None) -> Tensor:
     return Transpose(axes)(a)
 
 
+class Permute(TensorOp):
+    def __init__(self, axes: Tuple[int, ...]):
+        self.axes = axes
+
+    def compute(self, a: NDArray) -> NDArray:
+        return a.permute(self.axes)
+    
+
+def permute(a: Tensor, axes: Tuple[int, ...]) -> Tensor:
+    return Permute(axes)(a)
+
+
 class Reshape(TensorOp):
     def __init__(self, shape: Tuple[int, ...]):
         self.shape = shape
@@ -502,17 +514,33 @@ def flip(a: Tensor, axes: Tuple[int, ...]) -> Tensor:
     return Flip(axes)(a)
 
 
+class Pad(TensorOp):
+    def __init__(self, axes: Tuple[int, ...]):
+        self.axes = axes
+
+    def compute(self, a: NDArray) -> NDArray:
+        return a.pad(self.axes)
+    
+
+def pad(a: Tensor, axes: Tuple[int, ...]) -> Tensor:
+    return Pad(axes)(a)
+
+
 class Dilate(TensorOp):
-    def __init__(self, axes: Tuple[int, ...], dilation: int):
+    def __init__(self, axes: Tuple[int, ...], dilation: int, full=True):
         self.axes = axes
         self.dilation = dilation
+        self.full = full
 
     def compute(self, a: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
         new_shape= list(a.shape)
         origin_region_indices = [slice(0, dim, 1) for dim in a.shape]
         for axis in self.axes:
-            new_shape[axis] *= (self.dilation + 1)
+            if self.full:
+                new_shape[axis] *= (self.dilation + 1)
+            else:
+                new_shape[axis] += self.dilation * (new_shape[axis]-1)
             origin_region_indices[axis] = slice(0, new_shape[axis], self.dilation + 1)
         result = NDArray.make(shape=tuple(new_shape), device=a.device)
         result[tuple(slice(0, dim, 1) for dim in new_shape)] = 0
@@ -526,8 +554,8 @@ class Dilate(TensorOp):
         ### END YOUR SOLUTION
 
 
-def dilate(a: Tensor, axes: Tuple[int, ...], dilation: int) -> Tensor:
-    return Dilate(axes, dilation)(a)
+def dilate(a: Tensor, axes: Tuple[int, ...], dilation: int, full=True) -> Tensor:
+    return Dilate(axes, dilation, full=full)(a)
 
 
 class UnDilate(TensorOp):
@@ -578,11 +606,27 @@ class Conv(TensorOp):
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        Z, W = node.inputs
+        _, height, weight, _ = Z.shape
+        K1, K2, _, _ = W.shape
+        if self.stride > 1:
+            out_grad = dilate(out_grad, axes=(1, 2), dilation=self.stride-1, full=False)
+        # Z_grad
+        h_padding, w_padding = K1-self.padding-1, K2-self.padding-1
+        h_remain, w_remain = (height+2*self.padding-K1)%self.stride, (weight+2*self.padding-K2)%self.stride # remain region which kernel can not reach
+        out_grad = pad(out_grad, ((0,0),(h_padding,h_padding+h_remain),(w_padding,w_padding+w_remain),(0,0)))
+        flip_W = flip(permute(W, (0, 1, 3, 2)), (0, 1))
+        Z_grad = conv(out_grad, flip_W)
+        # W_grad
+        Z_ = permute(Z, (3, 1, 2, 0)) # (IC, H, W, N) => (N', H, W, IC')
+        Z_ = pad(Z_, ((0,0),(K1-1,K1-1),(K2-1,K2-1),(0,0)))
+        out_grad_ = permute(out_grad, (1, 2, 0, 3)) # (NH, NW, N, OC) => (K1', K2', IC', OC)
+        W_grad = permute(conv(Z_, out_grad_), (1, 2, 0, 3))
+        return Z_grad, W_grad
         ### END YOUR SOLUTION
 
 
-def conv(Z: Tensor, W: Tensor, stride: Optional[int] = 1, padding: Optional[int] = 1):
+def conv(Z: Tensor, W: Tensor, stride: Optional[int] = 1, padding: Optional[int] = 0):
     return Conv(stride, padding)(Z, W)
 
 
