@@ -49,10 +49,25 @@ class LogSumExp(TensorOp):
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        Z = node.inputs[0] # Tensor
+        max_Z_origin = maximum(Z, axes=self.axes, keepdims=True)
+        exp_Z = exp(Z - max_Z_origin.broadcast_to(Z.shape))
+        sum_exp_Z = summation(exp_Z, axes=self.axes, keepdims=True)
+        softmax = exp_Z / sum_exp_Z.broadcast_to(Z.shape)
+        return convertOriginalShape(out_grad, Z.shape, self.axes) * softmax
         ### END YOUR SOLUTION
 
 
 def logsumexp(a: Tensor, axes: Optional[Tuple[int, ...] | int]=None) -> Tensor:
     return LogSumExp(axes=axes)(a)
 
+
+def convertOriginalShape(now: "Value", originalShape, axes):
+    if now.shape == originalShape:
+        return now
+    if axes is None:
+        axes = range(len(originalShape))
+    shape = list(now.shape)
+    for axis in axes:
+        shape.insert(axis, 1)
+    return now.reshape(tuple(shape)).broadcast_to(originalShape)

@@ -203,7 +203,7 @@ class Reshape(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
-        return out_grad.compact().reshape(a.shape)
+        return reshape(out_grad, a.shape)
         ### END YOUR SOLUTION
 
 
@@ -384,7 +384,7 @@ class Exp(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
-        return out_grad * a.exp()
+        return out_grad * exp(a)
         ### END YOUR SOLUTION
 
 
@@ -402,8 +402,8 @@ class ReLU(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
-        mask = a > 0
-        return out_grad * mask
+        mask = a.cached_data > 0
+        return out_grad * Tensor(mask, device=a.device, dtype=a.dtype)
         ### END YOUR SOLUTION
 
 

@@ -138,7 +138,7 @@ class SoftmaxLoss(Module):
     def forward(self, logits: Tensor, y: Tensor):
         ### BEGIN YOUR SOLUTION
         n, k = logits.shape
-        one_hot = init.one_hot(k, y) # (n, k)
+        one_hot = init.one_hot(k, y, device=logits.device, dtype=logits.dtype) # (n, k)
         return (ops.logsumexp(logits, axes=(1,)).sum() - (one_hot * logits).sum()) / n
         ### END YOUR SOLUTION
 
@@ -230,7 +230,7 @@ class Dropout(Module):
             #          because it obeys the Bernoulli distribution, 
             #          but randb() produces the uniform distribution.
             ##########################################################################
-            mask = init.randb(*x.shape, p=1-self.p)
+            mask = init.randb(*x.shape, p=1-self.p, device=x.device, dtype=x.dtype)
             return x * mask / (1 - self.p)
         return x
         ### END YOUR SOLUTION
