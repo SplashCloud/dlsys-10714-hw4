@@ -8,6 +8,8 @@ from ..autograd import Op, Tensor, Value, TensorOp
 from ..autograd import TensorTuple, TensorTupleOp
 import numpy
 
+from ..needle_logger import global_logger
+
 # NOTE: we will import numpy as the array_api
 # as the backend for our computations, this line will change in later homeworks
 
@@ -156,7 +158,6 @@ class Transpose(TensorOp):
     '''
     def __init__(self, axes: Optional[Tuple[int, ...]] = None):
         self.origin_axes = axes
-        self.complete_axes = None
 
     def compute(self, a: NDArray) -> NDArray:
         ### BEGIN YOUR SOLUTION
@@ -165,14 +166,12 @@ class Transpose(TensorOp):
           axes[-2], axes[-1] = axes[-1], axes[-2]
         else:
           axes[self.origin_axes[1]], axes[self.origin_axes[0]] = axes[self.origin_axes[0]], axes[self.origin_axes[1]]
-        self.complete_axes = axes
         return a.permute(axes)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        assert self.complete_axes is not None
-        return out_grad.permute(self.complete_axes)
+        return transpose(out_grad, self.origin_axes)
         ### END YOUR SOLUTION
 
 
@@ -614,6 +613,7 @@ class Conv(TensorOp):
         # Z_grad
         h_padding, w_padding = K1-self.padding-1, K2-self.padding-1
         h_remain, w_remain = (height+2*self.padding-K1)%self.stride, (weight+2*self.padding-K2)%self.stride # remain region which kernel can not reach
+        global_logger.debug(f'out_grad.shape: {out_grad.shape}, padding: ({h_padding},{h_padding+h_remain}),({w_padding},{w_padding+w_remain})')
         out_grad = pad(out_grad, ((0,0),(h_padding,h_padding+h_remain),(w_padding,w_padding+w_remain),(0,0)))
         flip_W = flip(permute(W, (0, 1, 3, 2)), (0, 1))
         Z_grad = conv(out_grad, flip_W)
@@ -621,6 +621,7 @@ class Conv(TensorOp):
         Z_ = permute(Z, (3, 1, 2, 0)) # (IC, H, W, N) => (N', H, W, IC')
         Z_ = pad(Z_, ((0,0),(K1-1,K1-1),(K2-1,K2-1),(0,0)))
         out_grad_ = permute(out_grad, (1, 2, 0, 3)) # (NH, NW, N, OC) => (K1', K2', IC', OC)
+        global_logger.debug(f'Z_.shape: {Z_.shape} out_grad_.shape: {out_grad_.shape}')
         W_grad = permute(conv(Z_, out_grad_), (1, 2, 0, 3))
         return Z_grad, W_grad
         ### END YOUR SOLUTION
