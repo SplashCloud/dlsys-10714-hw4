@@ -249,6 +249,14 @@ class NDArray:
         ### BEGIN YOUR SOLUTION
         if not self.is_compact():
           raise ValueError("The current matrix is not compact")
+        if len(new_shape) == 2: 
+            # check if -1 exists and convert -1 to corresponding value
+            new_shape = list(new_shape)
+            if new_shape[0] == -1:
+                new_shape[0] = prod(self._shape) // new_shape[1]
+            elif new_shape[1] == -1:
+                new_shape[1] = prod(self._shape) // new_shape[0]
+            new_shape = tuple(new_shape)
         if prod(new_shape) != prod(self._shape):
           raise ValueError("The new size != current size")
         new_strides = self.compact_strides(new_shape)
