@@ -164,7 +164,6 @@ def train_cifar10(model, dataloader, n_epochs=1, optimizer=ndl.optim.Adam,
     train_acc, train_loss = 0, 0
     for _ in range(n_epochs):
         train_acc, train_loss = epoch_general_cifar10(dataloader=dataloader, model=model, loss_fn=loss_func, opt=opt, device=device)
-    print(f'train_acc={train_acc}, train_loss={train_loss}') # train_acc=0.3874, train_loss=1.7112712860107422
     return train_acc, train_loss
     ### END YOUR SOLUTION
 

@@ -83,4 +83,4 @@ class NeedleLogger:
 
 # Global logger instance
 global_logger = NeedleLogger()
-global_logger.set_log_level('DEBUG')
+global_logger.set_log_level('INFO')

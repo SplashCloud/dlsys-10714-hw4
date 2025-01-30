@@ -545,10 +545,10 @@ void Matmul(const CudaArray& a, const CudaArray& b, CudaArray* out, uint32_t M, 
   bool thread_tiled = M % TILE == 0 && P % TILE == 0;
   bool block_tiled = M % BLOCK_TILE == 0 && N % BLOCK_TILE == 0 && P % BLOCK_TILE == 0;
   bool all_tiled = M % S == 0 && N % L == 0 && P % S == 0;
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start);
+  // cudaEvent_t start, stop;
+  // cudaEventCreate(&start);
+  // cudaEventCreate(&stop);
+  // cudaEventRecord(start);
   if(all_tiled) {
     // printf("AllTiledMatmulKernel\n");
     CudaDims dim = CudaTwoDim(M / TILE, P / TILE);
@@ -566,11 +566,11 @@ void Matmul(const CudaArray& a, const CudaArray& b, CudaArray* out, uint32_t M, 
     CudaDims dim = CudaTwoDim(M, P);
     NoTiledMatmulKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, M, N, P);
   }
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  float milliseconds = 0;
-  cudaEventElapsedTime(&milliseconds, start, stop);
-  std::cout << "GPU time: " << milliseconds << " ms" << std::endl;
+  // cudaEventRecord(stop);
+  // cudaEventSynchronize(stop);
+  // float milliseconds = 0;
+  // cudaEventElapsedTime(&milliseconds, start, stop);
+  // std::cout << "GPU time: " << milliseconds << " ms" << std::endl;
   // cudaError_t err = cudaGetLastError();
   // if (err != cudaSuccess) {
   //     printf("CUDA Kernel Error: %s\n", cudaGetErrorString(err));
