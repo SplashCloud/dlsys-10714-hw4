@@ -25,7 +25,10 @@ class Dictionary(object):
         Returns the word's unique ID.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if word in self.word2idx.keys():
+            return self.word2idx[word]
+        self.word2idx[word] = len(self.idx2word)
+        return self.idx2word.append(word)
         ### END YOUR SOLUTION
 
     def __len__(self):
@@ -33,19 +36,27 @@ class Dictionary(object):
         Returns the number of unique words in the dictionary.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return len(self.idx2word)
         ### END YOUR SOLUTION
 
+    def toFile(self, filename):
+        with open(filename, 'w') as f:
+            f.write(f'total={len(self.idx2word)}\n')
+            for word in self.idx2word:
+                f.write(f'{word}\n')
 
 
 class Corpus(object):
     """
     Creates corpus from train, and test txt files.
+    ptb dataset url: http://www.fit.vutbr.cz/~imikolov/rnnlm/simple-examples.tgz
     """
     def __init__(self, base_dir, max_lines=None):
         self.dictionary = Dictionary()
-        self.train = self.tokenize(os.path.join(base_dir, 'train.txt'), max_lines)
-        self.test = self.tokenize(os.path.join(base_dir, 'test.txt'), max_lines)
+        self.train = self.tokenize(os.path.join(base_dir, 'ptb.train.txt'), max_lines)
+        self.test = self.tokenize(os.path.join(base_dir, 'ptb.test.txt'), max_lines)
+        self.valid = self.tokenize(os.path.join(base_dir, 'ptb.valid.txt'), max_lines)
+        # self.dictionary.toFile('corpus.txt')
 
     def tokenize(self, path, max_lines=None):
         """
@@ -60,7 +71,15 @@ class Corpus(object):
         ids: List of ids
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        ids = []
+        with open(path, 'r') as f:
+            lines = f.readlines() if max_lines is None else f.readlines()[:max_lines]
+            for line in lines:
+                words = line.strip().split()
+                for word in words:
+                    ids.append(self.dictionary.add_word(word))
+                ids.append(self.dictionary.add_word('<eos>'))
+        return ids
         ### END YOUR SOLUTION
 
 
@@ -81,7 +100,10 @@ def batchify(data, batch_size, device, dtype):
     Returns the data as a numpy array of shape (nbatch, batch_size).
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    if len(data) % batch_size != 0:
+        data = data[:len(data)-len(data)%batch_size]
+    nbatch = len(data) // batch_size # seq_len
+    return np.array(data).reshape((batch_size, nbatch)).T
     ### END YOUR SOLUTION
 
 
@@ -105,5 +127,6 @@ def get_batch(batches, i, bptt, device=None, dtype=None):
     target - Tensor of shape (bptt*bs,) with cached data as NDArray
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    data, target = batches[i:i+bptt,:], batches[i+1:i+bptt+1,:].reshape((bptt*batches.shape[1],))
+    return Tensor(data, device=device, dtype=dtype), Tensor(target, device=device, dtype=dtype)
     ### END YOUR SOLUTION
