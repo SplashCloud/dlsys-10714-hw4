@@ -6,7 +6,17 @@ from needle import ops
 import needle.init as init
 import numpy as np
 from .nn_basic import Parameter, Module
+import math
 
+def setItem(t: Tensor, axis: int, index: int, ele: Tensor) -> Tensor:
+    tt = ops.split(t, axis=axis)
+    lst = list(tt.tuple())
+    lst[index] = ele
+    return ops.stack(lst, axis=axis)
+
+def getItem(t: Tensor, axis: int, index: int) -> Tensor:
+    tt = ops.split(t, axis=axis)
+    return tt[index]
 
 class Sigmoid(Module):
     def __init__(self):
@@ -38,7 +48,45 @@ class RNNCell(Module):
         """
         super().__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.bias = bias
+        self.nonlinearity = nonlinearity
+        self.device = device
+        self.dtype = dtype
+        k = 1/self.hidden_size
+        self.W_ih = Parameter(init.rand(
+            *(self.input_size, self.hidden_size,),
+            low=-math.sqrt(k),
+            high=math.sqrt(k),
+            device=self.device,
+            dtype=self.dtype,
+            requires_grad=True
+        ))
+        self.W_hh = Parameter(init.rand(
+            *(self.hidden_size, self.hidden_size,),
+            low=-math.sqrt(k),
+            high=math.sqrt(k),
+            device=self.device,
+            dtype=self.dtype,
+            requires_grad=True
+        ))
+        self.bias_ih = Parameter(init.rand(
+            *(self.hidden_size,),
+            low=-math.sqrt(k),
+            high=math.sqrt(k),
+            device=self.device,
+            dtype=self.dtype,
+            requires_grad=True
+        )) if self.bias else None
+        self.bias_hh = Parameter(init.rand(
+            *(self.hidden_size,),
+            low=-math.sqrt(k),
+            high=math.sqrt(k),
+            device=self.device,
+            dtype=self.dtype,
+            requires_grad=True
+        )) if self.bias else None
         ### END YOUR SOLUTION
 
     def forward(self, X, h=None):
@@ -53,7 +101,21 @@ class RNNCell(Module):
             for each element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if h is None:
+            h = init.zeros(
+                *(X.shape[0], self.hidden_size,),
+                device=self.device,
+                dtype=self.dtype,
+                requires_grad=True
+            )
+        h_next = X @ self.W_ih + h @ self.W_hh
+        if self.bias:
+            h_next += self.bias_ih.broadcast_to(h_next.shape) + self.bias_hh.broadcast_to(h_next.shape)
+        if self.nonlinearity == 'tanh':
+            return ops.tanh(h_next)
+        if self.nonlinearity == 'relu':
+            return ops.relu(h_next)
+        raise NotImplementedError("Only support tanh and relu nonlinearity")
         ### END YOUR SOLUTION
 
 
@@ -82,7 +144,24 @@ class RNN(Module):
         """
         super().__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.bias = bias
+        self.nonlinearity = nonlinearity
+        self.device = device
+        self.dtype = dtype
+        self.rnn_cells = []
+        for i in range(self.num_layers):
+            input_size0 = self.input_size if i == 0 else self.hidden_size
+            self.rnn_cells.append(RNNCell(
+                input_size=input_size0,
+                hidden_size=self.hidden_size,
+                bias=self.bias,
+                nonlinearity=self.nonlinearity,
+                device=self.device,
+                dtype=self.dtype
+            ))
         ### END YOUR SOLUTION
 
     def forward(self, X, h0=None):
@@ -98,7 +177,34 @@ class RNN(Module):
         h_n of shape (num_layers, bs, hidden_size) containing the final hidden state for each element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if h0 is None:
+            h0 = init.zeros(
+                *(self.num_layers, X.shape[1], self.hidden_size,),
+                device=self.device,
+                dtype=self.dtype,
+                requires_grad=True
+            )
+        O = init.zeros(
+            *(X.shape[0], X.shape[1], self.hidden_size,),
+            device=self.device,
+            dtype=self.dtype,
+        )
+        H = init.zeros(
+            *h0.shape,
+            device=self.device,
+            dtype=self.dtype
+        )
+        for i in range(self.num_layers):
+            h = getItem(h0, axis=0, index=i)
+            for t in range(X.shape[0]):
+                if i == 0:
+                    x = getItem(X, axis=0, index=t)
+                else:
+                    x = getItem(O, axis=0, index=t)
+                h = self.rnn_cells[i](x, h)
+                O = setItem(O, axis=0, index=t, ele=h)
+            H = setItem(H, axis=0, index=i, ele=h)
+        return O, H
         ### END YOUR SOLUTION
 
 
