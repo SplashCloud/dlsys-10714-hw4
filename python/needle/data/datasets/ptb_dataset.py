@@ -25,10 +25,10 @@ class Dictionary(object):
         Returns the word's unique ID.
         """
         ### BEGIN YOUR SOLUTION
-        if word in self.word2idx.keys():
-            return self.word2idx[word]
-        self.word2idx[word] = len(self.idx2word)
-        return self.idx2word.append(word)
+        if word not in self.word2idx.keys():
+            self.word2idx[word] = len(self.idx2word)
+            self.idx2word.append(word)
+        return self.word2idx[word]
         ### END YOUR SOLUTION
 
     def __len__(self):
