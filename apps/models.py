@@ -4,6 +4,7 @@ import needle as ndl
 import needle.nn as nn
 import math
 import numpy as np
+from needle import ops
 np.random.seed(0)
 
 class ConvBN(ndl.nn.Module):
@@ -67,7 +68,45 @@ class LanguageModel(nn.Module):
         """
         super(LanguageModel, self).__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.embedding_size = embedding_size
+        self.output_size = output_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.seq_mode = seq_model
+        self.seq_len = seq_len
+        self.device = device
+        self.dtype = dtype
+        
+        self.embedding_layer = nn.Embedding(
+            num_embeddings=self.output_size,
+            embedding_dim=self.embedding_size,
+            device=self.device,
+            dtype=self.dtype
+        )
+        if self.seq_mode == 'rnn':
+            self.model = nn.RNN(
+                input_size=self.embedding_size,
+                hidden_size=self.hidden_size,
+                num_layers=self.num_layers,
+                device=self.device,
+                dtype=self.dtype
+            )
+        elif self.seq_mode == 'lstm':
+            self.model = nn.LSTM(
+                input_size=self.embedding_size,
+                hidden_size=self.hidden_size,
+                num_layers=self.num_layers,
+                device=self.device,
+                dtype=self.dtype
+            )
+        else:
+            raise NotImplementedError("Only support RNN and LSTM.")
+        self.classifier = nn.Linear(
+            in_features=self.hidden_size,
+            out_features=self.output_size,
+            device=self.device,
+            dtype=self.dtype
+        )
         ### END YOUR SOLUTION
 
     def forward(self, x, h=None):
@@ -84,7 +123,10 @@ class LanguageModel(nn.Module):
             else h is tuple of (h0, c0), each of shape (num_layers, bs, hidden_size)
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        embedding = self.embedding_layer(x)
+        output, hs = self.model(embedding, h)
+        prob = self.classifier(ops.reshape(output, shape=(-1, self.hidden_size)))
+        return prob, hs
         ### END YOUR SOLUTION
 
 

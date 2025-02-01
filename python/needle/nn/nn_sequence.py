@@ -435,7 +435,18 @@ class Embedding(Module):
             initialized from N(0, 1).
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.device = device
+        self.dtype = dtype
+        self.weight = Parameter(init.randn(
+            *(self.num_embeddings, self.embedding_dim,),
+            mean=0,
+            std=1,
+            device=self.device,
+            dtype=self.dtype,
+            requires_grad=True
+        ))
         ### END YOUR SOLUTION
 
     def forward(self, x: Tensor) -> Tensor:
@@ -449,5 +460,22 @@ class Embedding(Module):
         output of shape (seq_len, bs, embedding_dim)
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        tt0 = ops.split(x, axis=0) # tuple of (bs,)
+        one_hot_embeddings = []
+        for batch in tt0.tuple():
+            tt1 = ops.split(batch, axis=0) # tuple of single token
+            one_batch = []
+            for token in tt1.tuple():
+                one_hot = init.one_hot(
+                    self.num_embeddings,
+                    token, # need a tensor
+                    device=self.device,
+                    dtype=self.dtype,
+                    requires_grad=True
+                )
+                one_batch.append(one_hot)
+            one_hot_embeddings.append(ops.stack(one_batch, axis=0))
+        embedding = ops.stack(one_hot_embeddings, axis=0)
+        result = ops.reshape(embedding, shape=(-1, self.num_embeddings)) @ self.weight
+        return ops.reshape(result, shape=(x.shape[0], x.shape[1], self.embedding_dim))
         ### END YOUR SOLUTION
