@@ -1,8 +1,9 @@
 build/
 *.so
 __pycache__/
-*.ipynb
 .vscode/
 .cache/
 data/
 *.out
+
+!tests/*/data
