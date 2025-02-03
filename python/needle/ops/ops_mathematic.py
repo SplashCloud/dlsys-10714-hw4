@@ -444,7 +444,7 @@ class Stack(TensorOp):
         indices = [slice(0, shape[i], 1) for i in range(len(shape))]
         shape.insert(self.axis, len(args))
         indices.insert(self.axis, slice(0,1,1))
-        result = NDArray(numpy.random.randn(*shape), device=args[0].device)
+        result = args[0].device.full(shape=shape, fill_value=0)
         for i in range(len(args)):
           indices[self.axis] = slice(i, i+1, 1)
           result[tuple(indices)] = args[i]
