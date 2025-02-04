@@ -99,10 +99,21 @@ class LanguageModel(nn.Module):
                 device=self.device,
                 dtype=self.dtype
             )
+        elif self.seq_mode == 'transformer':
+            self.model = nn.Transformer(
+                embedding_size=self.embedding_size,
+                hidden_size=self.hidden_size,
+                num_layers=self.num_layers,
+                device=self.device,
+                dtype=self.dtype
+            )
         else:
-            raise NotImplementedError("Only support RNN and LSTM.")
+            raise NotImplementedError("Only support RNN, LSTM and Transformer.")
+        self.classifier_in_features = self.hidden_size
+        if self.seq_mode == 'transformer':
+            self.classifier_in_features = self.embedding_size
         self.classifier = nn.Linear(
-            in_features=self.hidden_size,
+            in_features=self.classifier_in_features,
             out_features=self.output_size,
             device=self.device,
             dtype=self.dtype
@@ -125,7 +136,7 @@ class LanguageModel(nn.Module):
         ### BEGIN YOUR SOLUTION
         embedding = self.embedding_layer(x)
         output, hs = self.model(embedding, h)
-        prob = self.classifier(ops.reshape(output, shape=(-1, self.hidden_size)))
+        prob = self.classifier(ops.reshape(output, shape=(-1, self.classifier_in_features)))
         return prob, hs
         ### END YOUR SOLUTION
 
