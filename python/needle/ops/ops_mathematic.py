@@ -1,7 +1,7 @@
 """Operator implementations."""
 
 from numbers import Number
-from typing import Optional, List, Tuple, Union
+from typing import Any, Optional, List, Tuple, Union
 
 from ..autograd import NDArray
 from ..autograd import Op, Tensor, Value, TensorOp
@@ -16,13 +16,41 @@ from ..needle_logger import global_logger
 from ..backend_selection import array_api, BACKEND
 from .ops_tuple import *
 
+from .gradient_validator import get_validator
+
+def validate_grad(op: TensorOp, out_grad: Tensor, node: Tensor, actual_grad: Any):
+    validator = get_validator()
+    validator.validate(op, out_grad, node, actual_grad)
+
+def broadcast_inverse_op(before_bct_shape, after_bct_shape, grad: Tensor):
+    '''
+    use for compute the grad of the tensor which has been broadcast_to
+    before_bct: the shape of origin tensor
+    after_bct: the shape of result tensor
+    grad: the grad which has same shape with after_bct
+    '''
+    expand = len(after_bct_shape) - len(before_bct_shape)
+    axes_to_sum = tuple(i for i in range(expand))
+    for i in range(len(after_bct_shape)-1, expand-1, -1):
+        if before_bct_shape[i-expand] != after_bct_shape[i]:
+            axes_to_sum += (i,)
+    if axes_to_sum:
+        return reshape(summation(grad, axes=axes_to_sum), before_bct_shape)
+
 
 class EWiseAdd(TensorOp):
     def compute(self, a: NDArray, b: NDArray) -> NDArray:
         return a + b
 
     def gradient(self, out_grad: Tensor, node: Tensor):
-        return out_grad, out_grad
+        lhs_grad, rhs_grad = out_grad, out_grad
+        lhs, rhs = node.inputs
+        if lhs.shape != node.shape:
+            lhs_grad = broadcast_inverse_op(lhs.shape, node.shape, lhs_grad)
+        if rhs.shape != node.shape:
+            rhs_grad = broadcast_inverse_op(rhs.shape, node.shape, rhs_grad)
+        validate_grad(self, out_grad, node, (lhs_grad, rhs_grad))
+        return lhs_grad, rhs_grad
 
 
 def add(a: Tensor, b: Tensor) -> Tensor:
@@ -37,6 +65,7 @@ class AddScalar(TensorOp):
         return a + self.scalar
 
     def gradient(self, out_grad: Tensor, node: Tensor):
+        validate_grad(self, out_grad, node, out_grad)
         return out_grad
 
 
@@ -50,7 +79,20 @@ class EWiseMul(TensorOp):
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         lhs, rhs = node.inputs
-        return out_grad * rhs, out_grad * lhs
+        # Handle broadcasting: sum over dimensions that were broadcast
+        lhs_grad = out_grad * rhs
+        rhs_grad = out_grad * lhs
+        
+        # Sum over broadcast dimensions for lhs (similar to BroadcastTo gradient)
+        if lhs.shape != node.shape:
+            lhs_grad = broadcast_inverse_op(lhs.shape, node.shape, lhs_grad)
+        
+        # Sum over broadcast dimensions for rhs (similar to BroadcastTo gradient)
+        if rhs.shape != node.shape:
+            rhs_grad = broadcast_inverse_op(rhs.shape, node.shape, rhs_grad)
+        
+        validate_grad(self, out_grad, node, (lhs_grad, rhs_grad))
+        return lhs_grad, rhs_grad
 
 
 def multiply(a: Tensor, b: Tensor) -> Tensor:
@@ -65,6 +107,7 @@ class MulScalar(TensorOp):
         return a * self.scalar
 
     def gradient(self, out_grad: Tensor, node: Tensor):
+        validate_grad(self, out_grad, node, out_grad * self.scalar)
         return (out_grad * self.scalar,)
 
 
@@ -104,7 +147,9 @@ class PowerScalar(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
-        return out_grad * self.scalar * (a ** (self.scalar - 1))
+        result = out_grad * self.scalar * (a ** (self.scalar - 1))
+        validate_grad(self, out_grad, node, result)
+        return result
         ### END YOUR SOLUTION
 
 
@@ -123,7 +168,21 @@ class EWiseDiv(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a, b = node.inputs
-        return out_grad / b, out_grad * (-1) * a / (b ** 2)
+        # Compute gradients: d(a/b)/da = 1/b, d(a/b)/db = -a/(b^2)
+        lhs_grad = out_grad / b
+        rhs_grad = out_grad * (-1) * a / (b ** 2)
+        
+        # Handle broadcasting: sum over dimensions that were broadcast
+        # Sum over broadcast dimensions for lhs (similar to BroadcastTo gradient)
+        if a.shape != node.shape:
+            lhs_grad = broadcast_inverse_op(a.shape, node.shape, lhs_grad)
+        
+        # Sum over broadcast dimensions for rhs (similar to BroadcastTo gradient)
+        if b.shape != node.shape:
+            rhs_grad = broadcast_inverse_op(b.shape, node.shape, rhs_grad)
+        
+        validate_grad(self, out_grad, node, (lhs_grad, rhs_grad))
+        return lhs_grad, rhs_grad
         ### END YOUR SOLUTION
 
 
@@ -142,7 +201,9 @@ class DivScalar(TensorOp):
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
-        return out_grad / self.scalar
+        result = out_grad / self.scalar
+        validate_grad(self, out_grad, node, result)
+        return result
         ### END YOUR SOLUTION
 
 
@@ -223,12 +284,7 @@ class BroadcastTo(TensorOp):
     def gradient(self, out_grad: Tensor, node: Tensor):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
-        expand = len(out_grad.shape) - len(a.shape)
-        axes = tuple(i for i in range(expand))
-        for i in range(len(out_grad.shape)-1, expand-1, -1):
-          if a.shape[i-expand] != out_grad.shape[i]:
-            axes += (i,)
-        return reshape(summation(out_grad, axes), a.shape)
+        return broadcast_inverse_op(a.shape, out_grad.shape, out_grad)
         ### END YOUR SOLUTION
 
 
@@ -303,14 +359,17 @@ class Summation(TensorOp):
         ### BEGIN YOUR SOLUTION
         a = node.inputs[0]
         if self.keepdims:
-            return broadcast_to(out_grad, a.shape)
-        if self.axes is None:
+            result = broadcast_to(out_grad, a.shape)
+        elif self.axes is None:
             shape = tuple(1 for _ in range(len(a.shape)))
-            return broadcast_to(reshape(out_grad, shape), a.shape)
-        shape = list(out_grad.shape)
-        for axis in self.axes:
-          shape.insert(axis, 1)
-        return broadcast_to(reshape(out_grad, shape), a.shape)
+            result = broadcast_to(reshape(out_grad, shape), a.shape)
+        else:
+            shape = list(out_grad.shape)
+            for axis in self.axes:
+                shape.insert(axis, 1)
+            result = broadcast_to(reshape(out_grad, shape), a.shape)
+        validate_grad(self, out_grad, node, result)
+        return result
         ### END YOUR SOLUTION
 
 
@@ -426,6 +485,157 @@ class Tanh(TensorOp):
 
 def tanh(a: Tensor) -> Tensor:
     return Tanh()(a)
+
+
+class Unsqueeze(TensorOp):
+    def __init__(self, dim: int):
+        """
+        Insert a dimension of size 1 at the specified position.
+        
+        Args:
+            dim: Position where to insert the new dimension. Can be negative.
+        """
+        self.dim = dim
+
+    def compute(self, a: NDArray) -> NDArray:
+        shape = list(a.shape)
+        # Handle negative dim
+        if self.dim < 0:
+            dim = len(shape) + self.dim + 1
+        else:
+            dim = self.dim
+        # Insert dimension of size 1
+        shape.insert(dim, 1)
+        return a.compact().reshape(tuple(shape))
+
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        a = node.inputs[0]
+        return squeeze(out_grad, dim=self.dim)
+
+
+def unsqueeze(a: Tensor, dim: int) -> Tensor:
+    return Unsqueeze(dim)(a)
+
+
+class Squeeze(TensorOp):
+    def __init__(self, dim: Optional[int] = None):
+        """
+        Remove dimensions of size 1.
+        
+        Args:
+            dim: If specified, only remove this dimension if it has size 1.
+                 If None, remove all dimensions of size 1.
+                 Can be negative.
+        """
+        self.dim = dim
+
+    def compute(self, a: NDArray) -> NDArray:
+        shape = list(a.shape)
+        if self.dim is not None:
+            # Handle negative dim
+            if self.dim < 0:
+                dim = len(shape) + self.dim
+            else:
+                dim = self.dim
+            # Only remove the specified dimension if it has size 1
+            if dim < len(shape) and shape[dim] == 1:
+                shape.pop(dim)
+        else:
+            # Remove all dimensions of size 1
+            shape = [s for s in shape if s != 1]
+        return a.compact().reshape(tuple(shape))
+
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        a = node.inputs[0]
+        original_shape = a.shape
+        
+        if self.dim is not None:
+            # Only one dimension was removed, restore it using unsqueeze
+            if self.dim < 0:
+                dim = len(original_shape) + self.dim
+            else:
+                dim = self.dim
+            return unsqueeze(out_grad, dim=dim)
+        else:
+            # Multiple dimensions might have been removed
+            # Restore original shape by inserting 1s where they were removed
+            out_shape = list(out_grad.shape)
+            original_idx = 0
+            out_idx = 0
+            result_shape = []
+            while original_idx < len(original_shape):
+                if original_shape[original_idx] == 1:
+                    # This dimension was removed, need to add it back
+                    result_shape.append(1)
+                    original_idx += 1
+                else:
+                    # This dimension was kept
+                    if out_idx < len(out_shape):
+                        result_shape.append(out_shape[out_idx])
+                        out_idx += 1
+                    original_idx += 1
+            # Handle remaining dimensions in out_shape
+            while out_idx < len(out_shape):
+                result_shape.append(out_shape[out_idx])
+                out_idx += 1
+            return reshape(out_grad, tuple(result_shape))
+
+
+def squeeze(a: Tensor, dim: Optional[int] = None) -> Tensor:
+    return Squeeze(dim)(a)
+
+
+class AdvancedIndexing(TensorOp):
+    """
+    Advanced indexing with integer tensors.
+    Supports indexing like tensor[indices] where indices is an integer tensor.
+    This operation uses numpy's advanced indexing, which requires data copying.
+    
+    Takes two inputs: (a, indices) where:
+    - a: the tensor to index
+    - indices: integer tensor used for indexing
+    """
+    def compute(self, a: NDArray, indices: NDArray) -> NDArray:
+        # Get numpy arrays
+        a_np = a.numpy()
+        indices_np = indices.numpy()
+        
+        # Ensure indices are integers
+        indices_np = indices_np.astype(numpy.int64)
+        
+        # Use numpy advanced indexing
+        # This creates a copy of the data
+        result_np = a_np[indices_np]
+        
+        # Create new NDArray from result
+        return NDArray(result_np, device=a.device)
+
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        """
+        Gradient for advanced indexing.
+        The gradient is zero everywhere except at the indexed positions.
+        We use numpy's advanced indexing to scatter gradients back.
+        """
+        a, indices = node.inputs
+        
+        # Create zero tensor with same shape as input
+        grad_np = numpy.zeros(a.shape, dtype=a.dtype)
+        
+        # Get numpy arrays
+        indices_np = indices.numpy()
+        indices_np = indices_np.astype(numpy.int64)
+        out_grad_np = out_grad.numpy()
+        
+        # Scatter gradients back to original positions
+        # numpy's advanced indexing can handle this
+        grad_np[indices_np] += out_grad_np
+        
+        # Indices don't have gradient (they're integer constants)
+        return Tensor(grad_np, device=a.device, dtype=a.dtype), None
+
+
+def advanced_indexing(a: Tensor, indices: Tensor) -> Tensor:
+    return AdvancedIndexing()(a, indices)
 
 
 class Stack(TensorOp):
