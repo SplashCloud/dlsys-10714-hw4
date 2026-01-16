@@ -52,10 +52,29 @@ def _child_modules(value: object) -> List["Module"]:
 class Module:
     def __init__(self):
         self.training = True
+        self._buffers = {}
 
     def parameters(self) -> List[Tensor]:
         """Return the list of parameters in the module."""
         return _unpack_params(self.__dict__)
+
+    def register_buffer(self, name: str, tensor: Tensor):
+        """
+        Register a buffer (a tensor that is not a parameter but should be part of the module's state).
+        
+        Buffers are tensors that:
+        - Are not trainable (not included in parameters())
+        - Should be saved as part of the module's state
+        - Typically used for things like running statistics in BatchNorm
+        
+        Args:
+            name: Name of the buffer
+            tensor: Tensor to register as a buffer
+        """
+        if not isinstance(tensor, Tensor):
+            raise TypeError(f"Buffer '{name}' must be a Tensor, but got {type(tensor)}")
+        self._buffers[name] = tensor
+        setattr(self, name, tensor)
 
     def _children(self) -> List["Module"]:
         return _child_modules(self.__dict__)
@@ -244,4 +263,13 @@ class Residual(Module):
     def forward(self, x: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
         return self.fn(x) + x
+        ### END YOUR SOLUTION
+
+class Sigmoid(Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: Tensor) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        return init.ones(*x.shape, device=x.device, dtype=x.dtype, requires_grad=True) / (1 + ops.exp(-x))
         ### END YOUR SOLUTION

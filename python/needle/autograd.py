@@ -1,7 +1,7 @@
 """Core data structures."""
 import needle
 from .backend_numpy import Device, cpu, all_devices
-from typing import List, Optional, NamedTuple, Tuple, Union
+from typing import List, Optional, NamedTuple, Tuple, Union, Dict
 from collections import namedtuple
 import numpy
 
@@ -310,6 +310,61 @@ class Tensor(Value):
             return data
         return data.numpy()
 
+    def to(self, *args, device=None, dtype=None):
+        """
+        Move tensor to a different device and/or change dtype.
+        
+        Similar to torch.Tensor.to(), supports:
+        - tensor.to(device)
+        - tensor.to(dtype)
+        - tensor.to(device=device, dtype=dtype)
+        - tensor.to(dtype=dtype, device=device)
+        
+        Parameters
+        ----------
+        *args : Device or dtype
+            First positional argument can be device or dtype
+        device : Device, optional
+            Target device
+        dtype : dtype, optional
+            Target dtype
+            
+        Returns
+        -------
+        Tensor
+            New tensor on target device/with target dtype, or self if no change needed
+        """
+        # Handle positional arguments
+        if len(args) > 0:
+            first_arg = args[0]
+            # Check if first arg is a Device
+            if isinstance(first_arg, Device):
+                device = first_arg
+            # Otherwise, assume it's a dtype (string like 'float32' or numpy dtype)
+            else:
+                dtype = first_arg
+        
+        # Get current device and dtype
+        current_device = self.device
+        current_dtype = self.dtype
+        
+        # Determine target device and dtype
+        target_device = device if device is not None else current_device
+        target_dtype = dtype if dtype is not None else current_dtype
+        
+        # If no change needed, return self
+        if target_device == current_device and target_dtype == current_dtype:
+            return self
+        
+        # Create new tensor with target device/dtype
+        # Use Tensor constructor which handles device/dtype conversion
+        return Tensor(
+            self,
+            device=target_device,
+            dtype=target_dtype,
+            requires_grad=self.requires_grad
+        )
+
     def __add__(self, other):
         if isinstance(other, Tensor):
             return needle.ops.EWiseAdd()(self, other)
@@ -346,8 +401,8 @@ class Tensor(Value):
     def matmul(self, other):
         return needle.ops.MatMul()(self, other)
 
-    def sum(self, axes=None):
-        return needle.ops.Summation(axes)(self)
+    def sum(self, axes=None, keepdims=False):
+        return needle.ops.Summation(axes, keepdims)(self)
 
     def broadcast_to(self, shape):
         return needle.ops.BroadcastTo(shape)(self)
@@ -360,6 +415,39 @@ class Tensor(Value):
 
     def transpose(self, axes=None):
         return needle.ops.Transpose(axes)(self)
+
+    def unsqueeze(self, dim: int):
+        return needle.ops.Unsqueeze(dim)(self)
+
+    def squeeze(self, dim=None):
+        return needle.ops.Squeeze(dim)(self)
+
+    def __getitem__(self, index):
+        """
+        Support indexing with slices, integers, and tensors.
+        
+        Args:
+            index: Can be:
+                - int: single index
+                - slice: slice object
+                - tuple: tuple of slices/ints
+                - Tensor: integer tensor for advanced indexing
+        """
+        # Handle Tensor indexing (advanced indexing)
+        if isinstance(index, Tensor):
+            return needle.ops.AdvancedIndexing()(self, index)
+        
+        # Handle regular indexing (slices, ints, tuples)
+        # Convert to NDArray and use its __getitem__
+        data = self.realize_cached_data()
+        result_data = data.__getitem__(index)
+        
+        # If result is a scalar, wrap it in a 0-d array
+        if isinstance(result_data, (int, float)):
+            result_data = numpy.array(result_data)
+        
+        # Create new Tensor from result
+        return Tensor.make_const(result_data, requires_grad=self.requires_grad)
 
 
 

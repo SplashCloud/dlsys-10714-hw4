@@ -5,7 +5,7 @@ from needle.autograd import Tensor
 from needle import ops
 import needle.init as init
 import numpy as np
-from .nn_basic import Parameter, Module
+from .nn_basic import Parameter, Module, Sigmoid
 import math
 
 def setItem(t: Tensor, axis: int, index: int, ele: Tensor) -> Tensor:
@@ -17,15 +17,6 @@ def setItem(t: Tensor, axis: int, index: int, ele: Tensor) -> Tensor:
 def getItem(t: Tensor, axis: int, index: int) -> Tensor:
     tt = ops.split(t, axis=axis)
     return tt[index]
-
-class Sigmoid(Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x: Tensor) -> Tensor:
-        ### BEGIN YOUR SOLUTION
-        return init.ones(*x.shape, device=x.device, dtype=x.dtype, requires_grad=True) / (1 + ops.exp(-x))
-        ### END YOUR SOLUTION
 
 class RNNCell(Module):
     def __init__(self, input_size, hidden_size, bias=True, nonlinearity='tanh', device=None, dtype="float32"):

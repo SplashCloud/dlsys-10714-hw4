@@ -69,3 +69,7 @@ def ones_like(array, *, device=None, requires_grad=False):
     return ones(
         *array.shape, dtype=array.dtype, device=device, requires_grad=requires_grad
     )
+
+
+def arange(end: int, device, *, requires_grad=False):
+    return ndl.Tensor(array=list(range(end)), device=device, requires_grad=requires_grad)

@@ -11,3 +11,4 @@ from . import optim
 from .backend_selection import *
 
 from .needle_logger import *
+from .tensor_utils import *

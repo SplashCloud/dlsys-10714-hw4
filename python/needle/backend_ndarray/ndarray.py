@@ -423,15 +423,51 @@ class NDArray:
 
     ### Collection of elementwise and scalar function: add, multiply, boolean, etc
 
+    @staticmethod
+    def broadcast_shape(shape1, shape2):
+        """Compute the broadcast shape of two shapes following numpy broadcasting rules."""
+        # Pad the shorter shape with 1s from the left
+        len1, len2 = len(shape1), len(shape2)
+        max_len = max(len1, len2)
+        
+        # Pad shapes to the same length
+        padded_shape1 = (1,) * (max_len - len1) + shape1
+        padded_shape2 = (1,) * (max_len - len2) + shape2
+        
+        # Compute broadcast shape
+        broadcast_shape = []
+        for s1, s2 in zip(padded_shape1, padded_shape2):
+            if s1 == s2:
+                broadcast_shape.append(s1)
+            elif s1 == 1:
+                broadcast_shape.append(s2)
+            elif s2 == 1:
+                broadcast_shape.append(s1)
+            else:
+                raise ValueError(f"Cannot broadcast shapes {shape1} and {shape2}: incompatible dimensions")
+        
+        return tuple(broadcast_shape)
+
     def ewise_or_scalar(self, other, ewise_func, scalar_func):
         """Run either an elementwise or scalar version of a function,
-        depending on whether "other" is an NDArray or scalar
+        depending on whether "other" is an NDArray or scalar.
+        Supports broadcasting when both operands are NDArrays.
         """
-        out = NDArray.make(self.shape, device=self.device)
         if isinstance(other, NDArray):
-            assert self.shape == other.shape, "operation needs two equal-sized arrays"
-            ewise_func(self.compact()._handle, other.compact()._handle, out._handle)
+            # Compute broadcast shape
+            out_shape = self.broadcast_shape(self.shape, other.shape)
+            
+            # Broadcast both arrays to the output shape
+            self_broadcast = self.broadcast_to(out_shape) if self.shape != out_shape else self
+            other_broadcast = other.broadcast_to(out_shape) if other.shape != out_shape else other
+            
+            # Create output array with broadcast shape
+            out = NDArray.make(out_shape, device=self.device)
+            
+            # Perform elementwise operation on broadcasted arrays
+            ewise_func(self_broadcast.compact()._handle, other_broadcast.compact()._handle, out._handle)
         else:
+            out = NDArray.make(self.shape, device=self.device)
             scalar_func(self.compact()._handle, other, out._handle)
         return out
 
@@ -575,7 +611,7 @@ class NDArray:
             out = NDArray.make(
                 tuple(1 for _ in range(len(self.shape)))
                 if keepdims else
-                (1,),
+                (),  # Return scalar (0-d array) when keepdims=False and axis is None(means reduce over all axes)
                 device=self.device
             )
 
@@ -583,6 +619,12 @@ class NDArray:
             if isinstance(axis, (tuple, list)):
                 assert len(axis) == 1, "Only support reduction over a single axis"
                 axis = axis[0]
+
+            # Normalize negative axis to positive axis
+            if axis < 0:
+                axis = axis + self.ndim
+            if axis < 0 or axis >= self.ndim:
+                raise ValueError(f"Axis {axis} is out of bounds for array of dimension {self.ndim}")
 
             view = self.permute(
                 tuple([a for a in range(self.ndim) if a != axis]) + (axis,)
