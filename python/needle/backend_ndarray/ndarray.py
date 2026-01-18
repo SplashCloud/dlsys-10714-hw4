@@ -331,11 +331,11 @@ class NDArray:
         if start == None:
             start = 0
         if start < 0:
-            start = self.shape[dim]
+            start += self.shape[dim]
         if stop == None:
             stop = self.shape[dim]
         if stop < 0:
-            stop = self.shape[dim] + stop
+            stop += self.shape[dim]
         if step == None:
             step = 1
 
@@ -378,6 +378,12 @@ class NDArray:
         # handle singleton as tuple, everything as slices
         if not isinstance(idxs, tuple):
             idxs = (idxs,)
+        if len(idxs) != self.ndim:
+            # if len(idx) < ndim, padding with (0:end:1)
+            for i in range(self.ndim):
+                if i < len(idxs):
+                    continue
+                idxs += (slice(0, self.shape[i], 1),)
         idxs = tuple(
             [
                 self.process_slice(s, i) if isinstance(s, slice) else slice(s, s + 1, 1)
@@ -547,6 +553,62 @@ class NDArray:
 
     ### Matrix multiplication
     def __matmul__(self, other):
+        '''
+        extend to multi-dimensions matrix mulitplication
+        '''
+        if self.ndim == 2 and other.ndim == 2:
+            return self._matmul_2d(self, other)
+        
+        a = self
+        b: NDArray = other
+
+        if a.ndim == 1:
+            a = a.compact().reshape((1, a.shape[0]))
+        if b.ndim == 1:
+            b = b.compact().reshape((b.shape[0], 1))
+
+        if a.ndim < 2 or b.ndim < 2:
+            raise ValueError("MM requires at least 2D arrays")
+
+        if a.shape[-1] != b.shape[-2]:
+            raise ValueError("Incompatible shapes for matmul: {a.shape} and {b.shape}")
+
+        m, k = a.shape[-2], a.shape[-1]
+        k2, n = b.shape[-2], b.shape[-1]
+        assert k == k2
+
+        other_dims_a = a.shape[:-2]
+        other_dims_b = b.shape[:-2]
+
+        output_batch_dims = self.broadcast_shape(other_dims_a, other_dims_b)
+
+        if other_dims_a != output_batch_dims:
+            a = a.broadcast_to(output_batch_dims + (m, k))
+        if other_dims_b != output_batch_dims:
+            b = b.broadcast_to(output_batch_dims + (k, n))
+
+        batch_size = prod(output_batch_dims) if output_batch_dims else 1
+
+        if batch_size == 1:
+            a_2d = a.compact().reshape((m, k))
+            b_2d = b.compact().reshape((k, n))
+            result_2d = self._matmul_2d(a_2d, b_2d)
+            return result_2d.compact().reshape(output_batch_dims + (m, n))
+
+        a_flat = a.compact().reshape((batch_size, m, k))
+        b_flat = b.compact().reshape((batch_size, k, n))
+        out_flat = NDArray.make((batch_size, m, n), device=self.device)
+
+        for i in range(batch_size):
+            a_i = a_flat[i].compact().reshape((m, k))
+            b_i = b_flat[i].compact().reshape((k, n))
+            out_i = self._matmul_2d(a_i, b_i)
+            out_flat[i] = out_i.compact().reshape((m, n))
+
+        return out_flat.compact().reshape(output_batch_dims + (m, n))
+        
+
+    def _matmul_2d(self, a, b):
         """Matrix multplication of two arrays.  This requires that both arrays
         be 2D (i.e., we don't handle batch matrix multiplication), and that the
         sizes match up properly for matrix multiplication.
@@ -562,15 +624,15 @@ class NDArray:
         The GPU (and numpy) versions don't have any tiled version (or rather,
         the GPU version will just work natively by tiling any input size).
         """
+        assert isinstance(a, NDArray) and isinstance(b, NDArray)
+        assert a.ndim == 2 and b.ndim == 2
+        assert a.shape[1] == b.shape[0]
 
-        assert self.ndim == 2 and other.ndim == 2
-        assert self.shape[1] == other.shape[0]
-
-        m, n, p = self.shape[0], self.shape[1], other.shape[1]
+        m, n, p = a.shape[0], a.shape[1], b.shape[1]
 
         # if the matrix is aligned, use tiled matrix multiplication
-        if hasattr(self.device, "matmul_tiled") and all(
-            d % self.device.__tile_size__ == 0 for d in (m, n, p)
+        if hasattr(a.device, "matmul_tiled") and all(
+            d % a.device.__tile_size__ == 0 for d in (m, n, p)
         ):
 
             def tile(a, tile):
@@ -579,22 +641,22 @@ class NDArray:
                     (a.shape[1] * tile, tile, a.shape[1], 1),
                 )
 
-            t = self.device.__tile_size__
-            a = tile(self.compact(), t).compact()
-            b = tile(other.compact(), t).compact()
-            out = NDArray.make((a.shape[0], b.shape[1], t, t), device=self.device)
-            self.device.matmul_tiled(a._handle, b._handle, out._handle, m, n, p)
+            t = a.device.__tile_size__
+            a = tile(a.compact(), t).compact()
+            b = tile(b.compact(), t).compact()
+            out = NDArray.make((a.shape[0], b.shape[1], t, t), device=a.device)
+            a.device.matmul_tiled(a._handle, b._handle, out._handle, m, n, p)
 
             return (
                 out.permute((0, 2, 1, 3))
                 .compact()
-                .reshape((self.shape[0], other.shape[1]))
+                .reshape((a.shape[0], b.shape[1]))
             )
 
         else:
-            out = NDArray.make((m, p), device=self.device)
-            self.device.matmul(
-                self.compact()._handle, other.compact()._handle, out._handle, m, n, p
+            out = NDArray.make((m, p), device=a.device)
+            a.device.matmul(
+                a.compact()._handle, b.compact()._handle, out._handle, m, n, p
             )
             return out
 

@@ -100,10 +100,12 @@ class RoPE(ndl.nn.Module):
         # token_positions = (batch_size, seq_len)
         assert x.shape[-1] == self.d_k
         assert x.shape[-2] == token_positions.shape[-1] and x.shape[-2] <= self.max_seq_len
-        assert token_positions.dtype == "int64" or token_positions.dtype == "long"
+        # assert token_positions.dtype == "int64" or token_positions.dtype == "long"
         rotary_matrix: ndl.Tensor = self.rotary_matrices[token_positions] # (batch_size, seq_len, d_k1, d_k2)
         rotary_matrix = rotary_matrix.unsqueeze(1) # (batch_size, 1, seq_len, d_k1, d_k2)
-        return rotary_matrix @ x # (batch_size, 1, seq_len, d_k1, d_k2) @ (batch_size, n_heads, seq_len, d_k)
+        x = x.unsqueeze(-1) # (batch_size, n_heads, seq_len, d_k, 1)
+        result = rotary_matrix @ x # (batch_size, 1, seq_len, d_k, d_k) @ (batch_size, n_heads, seq_len, d_k, 1)
+        return result.squeeze(-1)
 
     def _register_rotary_matrices(self):
         rotary_matrices = []
@@ -114,7 +116,7 @@ class RoPE(ndl.nn.Module):
                 rotary_matrix_for_i.append(ndl.Tensor([[math.cos(theta), -math.sin(theta)],
                                             [math.sin(theta), math.cos(theta)]], device=self.device))
             rotary_matrices.append(ndl.block_diag(*rotary_matrix_for_i))
-        self.register_buffer("rotary_matrices", ndl.stack(tensors=rotary_matrices, dim=0).to(device=self.device))
+        self.register_buffer("rotary_matrices", ndl.stack(rotary_matrices, axis=0).to(device=self.device))
 
 
 class MultiHeadSelfAttention(ndl.nn.Module):
@@ -153,7 +155,6 @@ class MultiHeadSelfAttention(ndl.nn.Module):
             Q = self.rope.forward(x=Q, token_positions=token_positions)
             K = self.rope.forward(x=K, token_positions=token_positions)
         mask = ndl.tril(ndl.ones(x.shape[-2], x.shape[-2], device=x.device))
-        mask = mask.to(dtype=bool)
         Attn = scaled_dot_product_attention(Q, K, V, mask=mask)
         Attn = Attn.reshape(shape=(batch_size, seq_len, self.num_heads * self.d_v))
         return Attn @ self.WO
@@ -172,7 +173,7 @@ def scaled_dot_product_attention(Q: ndl.Tensor, K: ndl.Tensor, V: ndl.Tensor, ma
     QK = Q @ K.transpose()
     scaled_QK = QK / math.sqrt(Q.shape[-1])
     if mask is not None:
-        masked_matrix = ndl.init.constant(mask.shape, c=-inf, dtype=Q.dtype, device=Q.device)
+        masked_matrix = ndl.init.constant(*mask.shape, c=-inf, dtype=Q.dtype, device=Q.device)
         masked_matrix[mask] = 0
         scaled_QK += masked_matrix
     softmax_scaled_QK = softmax(scaled_QK, dim=-1)

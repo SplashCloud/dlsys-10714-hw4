@@ -422,6 +422,47 @@ class Tensor(Value):
     def squeeze(self, dim=None):
         return needle.ops.Squeeze(dim)(self)
 
+    def __eq__(self, other):
+        """Elementwise equality comparison."""
+        if isinstance(other, Tensor):
+            return needle.ops.EWiseEq()(self, other)
+        else:
+            return needle.ops.EqScalar(other)(self)
+
+    def __ge__(self, other):
+        """Elementwise greater or equal comparison."""
+        if isinstance(other, Tensor):
+            return needle.ops.EWiseGe()(self, other)
+        else:
+            return needle.ops.GeScalar(other)(self)
+
+    def __ne__(self, other):
+        """Elementwise not equal comparison."""
+        eq_result = self == other
+        # 1 - eq_result: create ones tensor and subtract
+        ones = init.ones(*eq_result.shape, dtype=eq_result.dtype, device=eq_result.device)
+        return ones - eq_result
+
+    def __gt__(self, other):
+        """Elementwise greater than comparison."""
+        ge_result = self >= other
+        ne_result = self != other
+        return ge_result * ne_result
+
+    def __lt__(self, other):
+        """Elementwise less than comparison."""
+        ge_result = self >= other
+        # 1 - ge_result: create ones tensor and subtract
+        ones = init.ones(*ge_result.shape, dtype=ge_result.dtype, device=ge_result.device)
+        return ones - ge_result
+
+    def __le__(self, other):
+        """Elementwise less or equal comparison."""
+        gt_result = self > other
+        # 1 - gt_result: create ones tensor and subtract
+        ones = init.ones(*gt_result.shape, dtype=gt_result.dtype, device=gt_result.device)
+        return ones - gt_result
+
     def __getitem__(self, index):
         """
         Support indexing with slices, integers, and tensors.
@@ -440,7 +481,7 @@ class Tensor(Value):
         # Handle regular indexing (slices, ints, tuples)
         # Convert to NDArray and use its __getitem__
         data = self.realize_cached_data()
-        result_data = data.__getitem__(index)
+        result_data = data[index]
         
         # If result is a scalar, wrap it in a 0-d array
         if isinstance(result_data, (int, float)):
@@ -449,7 +490,73 @@ class Tensor(Value):
         # Create new Tensor from result
         return Tensor.make_const(result_data, requires_grad=self.requires_grad)
 
-
+    def __setitem__(self, index, other):
+        """
+        Support indexing with slices, integers, and tensors.
+        
+        Args:
+            index: Can be:
+                - int: single index
+                - slice: slice object
+                - tuple: tuple of slices/ints
+                - Tensor: integer tensor for advanced indexing
+            other: Value to set. Can be Tensor, scalar, or array-like.
+        """
+        # Ensure cached_data is realized
+        data = self.realize_cached_data()
+        
+        # Handle advanced indexing with Tensor
+        if isinstance(index, Tensor):
+            # Convert index tensor to numpy array
+            index_np = index.realize_cached_data().numpy()
+            index_np = index_np.astype(numpy.int64)
+            
+            # Handle other value
+            if isinstance(other, Tensor):
+                other_np = other.realize_cached_data().numpy()
+            elif isinstance(other, (int, float)):
+                other_np = other
+            else:
+                # Try to convert to numpy array
+                other_np = numpy.array(other)
+            
+            # Use numpy advanced indexing for setting
+            # Get numpy representation of data
+            if array_api is numpy:
+                # For numpy backend, data is already a numpy array
+                data_np = data
+            else:
+                # For non-numpy backends, convert to numpy
+                data_np = data.numpy()
+            
+            # Perform advanced indexing assignment
+            data_np[index_np] = other_np
+            
+            # Update cached_data with modified numpy array
+            if array_api is numpy:
+                # For numpy backend, data_np is the same reference as data
+                self.cached_data = data_np
+            else:
+                # For non-numpy backends, create new NDArray from modified numpy array
+                self.cached_data = NDArray(data_np, device=data.device)
+            return
+        
+        # Handle regular indexing (slices, ints, tuples)
+        # Convert other to appropriate format
+        if isinstance(other, Tensor):
+            other_data = other.realize_cached_data()
+        elif isinstance(other, (int, float)):
+            other_data = other
+        else:
+            # Try to convert to NDArray
+            try:
+                other_data = NDArray(numpy.array(other), device=data.device)
+            except:
+                other_data = other
+        
+        # Use NDArray's __setitem__ which handles views properly and modifies in place
+        data.__setitem__(index, other_data)
+        # Note: data.__setitem__ modifies the array in place, so cached_data is already updated
 
 
     __radd__ = __add__

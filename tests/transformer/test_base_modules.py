@@ -102,7 +102,7 @@ def test_embedding_backward(device, batch_size, seq_len, num_embeddings, embeddi
     
     # Needle implementation
     model_ndl = Embedding(num_embeddings, embedding_dim, device=device)
-    token_ids_ndl = ndl.Tensor(token_ids_np, device=device, dtype="int64")
+    token_ids_ndl = ndl.Tensor(token_ids_np, device=device)
     out_ndl = model_ndl(token_ids_ndl)
     loss_ndl = out_ndl.sum()
     loss_ndl.backward()
@@ -114,7 +114,7 @@ def test_embedding_backward(device, batch_size, seq_len, num_embeddings, embeddi
     out_torch = model_torch(token_ids_torch)
     loss_torch = out_torch.sum()
     loss_torch.backward()
-    
+
     np.testing.assert_allclose(model_ndl.vocab.grad.numpy(), model_torch.weight.grad.numpy(), atol=1e-5, rtol=1e-5)
 
 
@@ -214,9 +214,9 @@ def test_swiglu_forward(device, batch_size, seq_len, d_model, d_ff):
     
     # PyTorch implementation
     x_torch = torch.tensor(x_np, requires_grad=True)
-    w1_torch = torch.tensor(model_ndl.W1.cached_data.numpy().T, requires_grad=True)
-    w2_torch = torch.tensor(model_ndl.W2.cached_data.numpy().T, requires_grad=True)
-    w3_torch = torch.tensor(model_ndl.W3.cached_data.numpy().T, requires_grad=True)
+    w1_torch = torch.tensor(model_ndl.W1.cached_data.numpy(), requires_grad=True)
+    w2_torch = torch.tensor(model_ndl.W2.cached_data.numpy(), requires_grad=True)
+    w3_torch = torch.tensor(model_ndl.W3.cached_data.numpy(), requires_grad=True)
     out_torch = swiglu_torch(x_torch, w1_torch, w2_torch, w3_torch)
     
     np.testing.assert_allclose(out_ndl.numpy(), out_torch.detach().numpy(), atol=1e-4, rtol=1e-4)
@@ -240,17 +240,17 @@ def test_swiglu_backward(device, batch_size, seq_len, d_model, d_ff):
     
     # PyTorch implementation
     x_torch = torch.tensor(x_np, requires_grad=True)
-    w1_torch = torch.tensor(model_ndl.W1.cached_data.numpy().T, requires_grad=True)
-    w2_torch = torch.tensor(model_ndl.W2.cached_data.numpy().T, requires_grad=True)
-    w3_torch = torch.tensor(model_ndl.W3.cached_data.numpy().T, requires_grad=True)
+    w1_torch = torch.tensor(model_ndl.W1.cached_data.numpy(), requires_grad=True)
+    w2_torch = torch.tensor(model_ndl.W2.cached_data.numpy(), requires_grad=True)
+    w3_torch = torch.tensor(model_ndl.W3.cached_data.numpy(), requires_grad=True)
     out_torch = swiglu_torch(x_torch, w1_torch, w2_torch, w3_torch)
     loss_torch = out_torch.sum()
     loss_torch.backward()
     
     np.testing.assert_allclose(x_ndl.grad.numpy(), x_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
-    np.testing.assert_allclose(model_ndl.W1.grad.numpy().T, w1_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
-    np.testing.assert_allclose(model_ndl.W2.grad.numpy().T, w2_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
-    np.testing.assert_allclose(model_ndl.W3.grad.numpy().T, w3_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(model_ndl.W1.grad.numpy(), w1_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(model_ndl.W2.grad.numpy(), w2_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(model_ndl.W3.grad.numpy(), w3_torch.grad.numpy(), atol=1e-4, rtol=1e-4)
 
 
 # Test RoPE
@@ -310,7 +310,7 @@ def test_rope_forward(device, batch_size, n_heads, seq_len, d_k, theta, max_seq_
     # Needle implementation
     model_ndl = RoPE(theta=theta, d_k=d_k, max_seq_len=max_seq_len, device=device)
     x_ndl = ndl.Tensor(x_np, device=device)
-    token_positions_ndl = ndl.Tensor(token_positions_np, device=device, dtype="int64")
+    token_positions_ndl = ndl.Tensor(token_positions_np, device=device)
     out_ndl = model_ndl(x_ndl, token_positions_ndl)
     
     # PyTorch implementation
@@ -360,7 +360,7 @@ def test_scaled_dot_product_attention(device, batch_size, n_heads, seq_len, d_k)
     Q_ndl = ndl.Tensor(Q_np, device=device)
     K_ndl = ndl.Tensor(K_np, device=device)
     V_ndl = ndl.Tensor(V_np, device=device)
-    mask_ndl = ndl.Tensor(mask_np, device=device, dtype="bool")
+    mask_ndl = ndl.Tensor(mask_np, device=device)
     out_ndl = scaled_dot_product_attention(Q_ndl, K_ndl, V_ndl, mask=mask_ndl)
     
     # PyTorch implementation
@@ -433,7 +433,7 @@ def test_multihead_self_attention_with_rope(device, batch_size, seq_len, d_embed
         device=device
     )
     x_ndl = ndl.Tensor(x_np, device=device)
-    token_positions_ndl = ndl.Tensor(token_positions_np, device=device, dtype="int64")
+    token_positions_ndl = ndl.Tensor(token_positions_np, device=device)
     out_ndl = model_ndl(x_ndl, token_positions=token_positions_ndl)
     
     # Basic shape check

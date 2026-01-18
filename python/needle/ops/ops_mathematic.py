@@ -211,6 +211,95 @@ def divide_scalar(a: Tensor, scalar) -> Tensor:
     return DivScalar(scalar)(a)
 
 
+# Comparison operations
+class EWiseEq(TensorOp):
+    """Elementwise equality comparison."""
+    
+    def compute(self, a: NDArray, b: NDArray) -> NDArray:
+        return a == b
+    
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        # Comparison operations are not differentiable
+        # Return zero gradients
+        a, b = node.inputs
+        a_grad = Tensor.make_const(numpy.zeros(a.shape, dtype=a.dtype), requires_grad=False)
+        b_grad = Tensor.make_const(numpy.zeros(b.shape, dtype=b.dtype), requires_grad=False)
+        
+        # Handle broadcasting
+        if a.shape != node.shape:
+            a_grad = broadcast_inverse_op(a.shape, node.shape, a_grad)
+        if b.shape != node.shape:
+            b_grad = broadcast_inverse_op(b.shape, node.shape, b_grad)
+        
+        return a_grad, b_grad
+
+
+def eq(a: Tensor, b: Tensor) -> Tensor:
+    return EWiseEq()(a, b)
+
+
+class EqScalar(TensorOp):
+    """Scalar equality comparison."""
+    
+    def __init__(self, scalar):
+        self.scalar = scalar
+    
+    def compute(self, a: NDArray) -> NDArray:
+        return a == self.scalar
+    
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        # Comparison operations are not differentiable
+        return Tensor.make_const(numpy.zeros(node.inputs[0].shape, dtype=node.inputs[0].dtype), requires_grad=False)
+
+
+def eq_scalar(a: Tensor, scalar) -> Tensor:
+    return EqScalar(scalar)(a)
+
+
+class EWiseGe(TensorOp):
+    """Elementwise greater or equal comparison."""
+    
+    def compute(self, a: NDArray, b: NDArray) -> NDArray:
+        return a >= b
+    
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        # Comparison operations are not differentiable
+        # Return zero gradients
+        a, b = node.inputs
+        a_grad = Tensor.make_const(numpy.zeros(a.shape, dtype=a.dtype), requires_grad=False)
+        b_grad = Tensor.make_const(numpy.zeros(b.shape, dtype=b.dtype), requires_grad=False)
+        
+        # Handle broadcasting
+        if a.shape != node.shape:
+            a_grad = broadcast_inverse_op(a.shape, node.shape, a_grad)
+        if b.shape != node.shape:
+            b_grad = broadcast_inverse_op(b.shape, node.shape, b_grad)
+        
+        return a_grad, b_grad
+
+
+def ge(a: Tensor, b: Tensor) -> Tensor:
+    return EWiseGe()(a, b)
+
+
+class GeScalar(TensorOp):
+    """Scalar greater or equal comparison."""
+    
+    def __init__(self, scalar):
+        self.scalar = scalar
+    
+    def compute(self, a: NDArray) -> NDArray:
+        return a >= self.scalar
+    
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        # Comparison operations are not differentiable
+        return Tensor.make_const(numpy.zeros(node.inputs[0].shape, dtype=node.inputs[0].dtype), requires_grad=False)
+
+
+def ge_scalar(a: Tensor, scalar) -> Tensor:
+    return GeScalar(scalar)(a)
+
+
 class Transpose(TensorOp):
     '''
       axes: None or a 2-ele tuple
@@ -614,7 +703,11 @@ class AdvancedIndexing(TensorOp):
         """
         Gradient for advanced indexing.
         The gradient is zero everywhere except at the indexed positions.
-        We use numpy's advanced indexing to scatter gradients back.
+        We use numpy.add.at() to properly accumulate gradients when indices repeat.
+        
+        For example, if a.shape = (num_embeddings, embedding_dim) and 
+        indices.shape = (batch_size, seq_len), then out_grad.shape = (batch_size, seq_len, embedding_dim).
+        We need to accumulate out_grad[i, j, :] into grad_np[indices[i, j], :] for all i, j.
         """
         a, indices = node.inputs
         
@@ -626,9 +719,33 @@ class AdvancedIndexing(TensorOp):
         indices_np = indices_np.astype(numpy.int64)
         out_grad_np = out_grad.numpy()
         
-        # Scatter gradients back to original positions
-        # numpy's advanced indexing can handle this
-        grad_np[indices_np] += out_grad_np
+        # Flatten indices to 1D: shape (num_indices,)
+        indices_flat = indices_np.flatten()
+        num_indices = indices_flat.size
+        
+        # Reshape out_grad to (num_indices, *trailing_dims)
+        # where trailing_dims = a.shape[1:] (all dimensions after the first)
+        trailing_shape = a.shape[1:]
+        out_grad_reshaped = out_grad_np.reshape((num_indices,) + trailing_shape)
+        
+        # Accumulate gradients for each trailing dimension separately
+        # This handles the case where the same index appears multiple times
+        if len(trailing_shape) == 0:
+            # 1D case: a.shape = (n,), out_grad matches indices shape
+            numpy.add.at(grad_np, indices_flat, out_grad_reshaped)
+        else:
+            # Multi-dimensional case: accumulate for each trailing dimension
+            # For embedding: a.shape = (num_embeddings, embedding_dim)
+            #                indices_flat.shape = (batch_size * seq_len,)
+            #                out_grad_reshaped.shape = (batch_size * seq_len, embedding_dim)
+            # We need to accumulate out_grad_reshaped[:, dim] into grad_np[indices_flat, dim]
+            # Use a loop over trailing dimensions
+            trailing_size = numpy.prod(trailing_shape)
+            grad_flat = grad_np.reshape((a.shape[0], trailing_size))
+            out_grad_flat = out_grad_reshaped.reshape((num_indices, trailing_size))
+            
+            for i in range(trailing_size):
+                numpy.add.at(grad_flat[:, i], indices_flat, out_grad_flat[:, i])
         
         # Indices don't have gradient (they're integer constants)
         return Tensor(grad_np, device=a.device, dtype=a.dtype), None
